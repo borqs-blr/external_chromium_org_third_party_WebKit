@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2009, 2012 Ericsson AB. All rights reserved.
  * Copyright (C) 2010 Apple Inc. All rights reserved.
- * Copyright (C) 2011, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2011, The Linux Foundation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
