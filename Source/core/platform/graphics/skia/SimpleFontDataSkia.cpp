@@ -209,6 +209,48 @@ bool SimpleFontData::containsCharacters(const UChar* characters, int length) con
     return true;
 }
 
+
+#ifdef REVERIE
+uint16_t SimpleFontData::getCharacter(uint16_t val) const
+{
+    if(val <= 2)
+        return 0x20;
+    SkPaint paint;
+    m_platformData.setupPaint(&paint);
+    paint.setTextEncoding(SkPaint::kUTF16_TextEncoding);
+    return (uint16_t)paint.glyphToUnichar(val);
+}
+
+int SimpleFontData::getAdvances(uint16_t *unichar,int numGlyphs,
+        float *advances) const
+{
+    SkPaint paint;
+    m_platformData.setupPaint(&paint);
+    paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+
+    char* text = new char[(numGlyphs * 4) + 4];
+    for(int i = 0; i < numGlyphs * 2; i += 2){
+        unsigned short glyph = paint.unicharToGlyph(unichar[(i / 2)]);
+        if(glyph <= 0x2 || glyph == 0xffff){
+            glyph = 0x03;
+        }
+        text[i] = (char)(glyph & 0xff);
+        text[i + 1] = (char)((glyph & 0xff00) >> 8);
+    }
+    const char *text2 = text;
+
+    int retval = paint.getTextWidths(text2,numGlyphs*2,advances);
+
+    if(text){
+        delete(text);
+        text = NULL;
+    }
+    return retval;
+}
+
+#endif
+
+
 void SimpleFontData::determinePitch()
 {
     m_treatAsFixedPitch = platformData().isFixedPitch();

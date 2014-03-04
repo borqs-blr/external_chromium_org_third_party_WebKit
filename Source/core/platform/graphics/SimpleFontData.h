@@ -190,6 +190,12 @@ public:
         return false;
     }
 
+#ifdef REVERIE
+    virtual uint16_t getCharacter(uint16_t val) const;
+    virtual int getAdvances(uint16_t *unichar,int numGlyphs,
+        float *advances) const;
+#endif
+
 private:
     SimpleFontData(const FontPlatformData&, bool isCustomFont = false, bool isLoading = false, bool isTextOrientationFallback = false);
 
