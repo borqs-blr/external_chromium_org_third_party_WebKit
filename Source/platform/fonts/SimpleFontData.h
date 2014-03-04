@@ -175,6 +175,11 @@ public:
     }
 
     PassRefPtr<CustomFontData> customFontData() const { return m_customFontData; }
+#ifdef REVERIE
+    virtual uint16_t getCharacter(uint16_t val) const;
+    virtual int getAdvances(uint16_t *unichar,int numGlyphs,
+        float *advances) const;
+#endif
 
 private:
     SimpleFontData(const FontPlatformData&, PassRefPtr<CustomFontData> customData, bool isTextOrientationFallback = false);
