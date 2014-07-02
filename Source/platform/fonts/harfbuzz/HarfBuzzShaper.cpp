@@ -724,6 +724,24 @@ void HarfBuzzShaper::setGlyphPositionsForHarfBuzzRun(HarfBuzzRun* currentRun, hb
     uint16_t* glyphToCharacterIndexes = currentRun->glyphToCharacterIndexes();
     float totalAdvance = 0;
 
+#ifdef REVERIE
+    int reverie = 0;
+    uint16_t *unichar = NULL;
+    SkScalar *advanceWidth = NULL;
+    if(numGlyphs > 1){
+        unichar = new uint16_t[numGlyphs+4];
+        advanceWidth = new SkScalar[numGlyphs+4];
+        for (size_t i = 0; i < numGlyphs; ++i){
+            unichar[i] = currentFontData->getCharacter(glyphInfos[i].codepoint);
+            if((unichar[i] >= 0x900 && unichar[i] <= 0xaff) || (unichar[i] >= 0xb80
+                && unichar[i] <= 0xd7f) || (unichar[i] >= 0xe00 && unichar[i] <= 0xe7f))
+                reverie = 1;
+         }
+         if(reverie==1){
+            currentFontData->getAdvances(unichar,numGlyphs,advanceWidth);
+         }
+    }
+#endif
     // HarfBuzz returns the shaping result in visual order. We need not to flip for RTL.
     for (size_t i = 0; i < numGlyphs; ++i) {
         bool runEnd = i + 1 == numGlyphs;
@@ -757,10 +775,28 @@ void HarfBuzzShaper::setGlyphPositionsForHarfBuzzRun(HarfBuzzRun* currentRun, hb
                 offsetX += m_letterSpacing;
         }
 
+#ifdef REVERIE
+        if((reverie==1) && (numGlyphs > 1))
+            advance = SkScalarToFloat(advanceWidth[i]);
+#endif
         currentRun->setGlyphAndPositions(i, glyph, advance, offsetX, offsetY);
 
         totalAdvance += advance;
     }
+
+#ifdef REVERIE
+    if(numGlyphs > 1){
+        if(unichar){
+            delete(unichar);
+            unichar = NULL;
+        }
+        if(advanceWidth){
+            delete(advanceWidth);
+            advanceWidth = NULL;
+        }
+    }
+#endif
+
     currentRun->setWidth(totalAdvance > 0.0 ? totalAdvance : 0.0);
     m_totalWidth += currentRun->width();
 }

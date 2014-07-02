@@ -719,6 +719,11 @@ LOCAL_LDFLAGS_Release := \
 
 LOCAL_LDFLAGS := $(LOCAL_LDFLAGS_$(GYP_CONFIGURATION))
 
+ifeq ($(MULTI_LANG_ENGINE),REVERIE)
+LOCAL_CFLAGS += -DREVERIE
+endif
+
+
 LOCAL_STATIC_LIBRARIES := \
 	third_party_WebKit_Source_platform_blink_arm_neon_gyp
 
