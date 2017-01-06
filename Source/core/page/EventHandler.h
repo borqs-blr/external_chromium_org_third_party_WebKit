@@ -23,6 +23,26 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * BORQS Software Solutions Pvt Ltd. CONFIDENTIAL
+ * Copyright (c) 2016-17 All rights reserved.
+ *
+ * The source code contained or described herein and all documents
+ * related to the source code ("Material") are owned by BORQS Software
+ * Solutions Pvt Ltd. No part of the Material may be used,copied,
+ * reproduced, modified, published, uploaded,posted, transmitted,
+ * distributed, or disclosed in any way without BORQS Software
+ * Solutions Pvt Ltd. prior written permission.
+ *
+ * No license under any patent, copyright, trade secret or other
+ * intellectual property right is granted to or conferred upon you
+ * by disclosure or delivery of the Materials, either expressly, by
+ * implication, inducement, estoppel or otherwise. Any license
+ * under such intellectual property rights must be express and
+ * approved by BORQS Software Solutions Pvt Ltd. in writing.
+ *
+ */
+
 #ifndef EventHandler_h
 #define EventHandler_h
 
@@ -79,6 +99,14 @@ class WheelEvent;
 class Widget;
 
 struct DragState;
+
+// Enable/Disable logs in Event handler
+//#define ENABLE_BROWSER_CURSOR_LOGS 0
+
+// flag to control cursor logs
+#define CURSOR_LOGS 0
+
+#define SUPPORT_BROWSER_VIRTUAL_CURSOR
 
 enum AppendTrailingWhitespace { ShouldAppendTrailingWhitespace, DontAppendTrailingWhitespace };
 enum CheckDragHysteresis { ShouldCheckDragHysteresis, DontCheckDragHysteresis };
@@ -139,6 +167,15 @@ public:
     bool handleMouseReleaseEvent(const PlatformMouseEvent&);
     bool handleWheelEvent(const PlatformWheelEvent&);
     void defaultWheelEventHandler(Node*, WheelEvent*);
+
+#ifdef SUPPORT_BROWSER_VIRTUAL_CURSOR
+    //handles page scroll on mouse move for mouse pointer
+    bool scrollElementOnMouseMove(ScrollDirection, ScrollGranularity, Node* startNode = 0, float delta = 1.0f);
+    bool elementNeedScrolling(const PlatformMouseEvent& mouseEvent);
+    ScrollDirection scrollDirectionForElement(const PlatformMouseEvent& mouseEvent);
+    ScrollDirection scrollDirectionForFrame(const PlatformMouseEvent& mouseEvent);
+    bool MouseMoveEventToMainFrame(Frame* currentFrame,ScrollDirection scrollDirection,bool scrollHandled);
+#endif
 
     bool handleGestureEvent(const PlatformGestureEvent&);
     bool handleGestureScrollEnd(const PlatformGestureEvent&);

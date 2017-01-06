@@ -25,6 +25,26 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/*
+ * BORQS Software Solutions Pvt Ltd. CONFIDENTIAL
+ * Copyright (c) 2016-17 All rights reserved.
+ *
+ * The source code contained or described herein and all documents
+ * related to the source code ("Material") are owned by BORQS Software
+ * Solutions Pvt Ltd. No part of the Material may be used,copied,
+ * reproduced, modified, published, uploaded,posted, transmitted,
+ * distributed, or disclosed in any way without BORQS Software
+ * Solutions Pvt Ltd. prior written permission.
+ *
+ * No license under any patent, copyright, trade secret or other
+ * intellectual property right is granted to or conferred upon you
+ * by disclosure or delivery of the Materials, either expressly, by
+ * implication, inducement, estoppel or otherwise. Any license
+ * under such intellectual property rights must be express and
+ * approved by BORQS Software Solutions Pvt Ltd. in writing.
+ *
+ */
+
 #include "config.h"
 #include "core/page/EventHandler.h"
 
@@ -103,6 +123,14 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/TemporaryChange.h"
 
+
+#ifdef ENABLE_BROWSER_CURSOR_LOGS
+#include <android/log.h>
+    #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "BrowserCursor", __VA_ARGS__)
+#else
+    #define LOGE(...)
+#endif
+
 namespace WebCore {
 
 using namespace HTMLNames;
@@ -115,6 +143,15 @@ static const int LinkDragHysteresis = 40;
 static const int ImageDragHysteresis = 5;
 static const int TextDragHysteresis = 3;
 static const int GeneralDragHysteresis = 3;
+
+#ifdef SUPPORT_BROWSER_VIRTUAL_CURSOR
+/* Constants used by Cursor for scrolling  */
+const int minimumCursorScroll = 0;
+const int maximumCursorScroll = 20;
+const float minimumWheelTickForCursor = 0.0f;
+const float maximumWheelTickForCursor = 1.0f;
+#endif
+
 
 // The amount of time to wait before sending a fake mouse event, triggered
 // during a scroll. The short interval is used if the content responds to the mouse events quickly enough,
@@ -1496,8 +1533,177 @@ static Cursor& syntheticTouchCursor()
     return c;
 }
 
+#ifdef SUPPORT_BROWSER_VIRTUAL_CURSOR
+/* Scroll the element on mouse move if the element is scrollable. */
+bool EventHandler::scrollElementOnMouseMove(ScrollDirection direction,
+                ScrollGranularity granularity, Node* startNode, float delta) {
+
+#if CURSOR_LOGS
+    LOGE("[%s][%d][%s]\n", __FUNCTION__, __LINE__, __FILE__);
+#endif
+    if (!delta)
+        return false;
+
+    Node* node = startNode;
+
+    if (!node)
+        node = m_frame->document()->focusedElement();
+
+    if (!node)
+        node = m_mousePressNode.get();
+
+    if (!node || !node->renderer())
+        return false;
+
+    RenderBox* curBox = node->renderer()->enclosingBox();
+    bool didScroll = false;
+    // Bubble the scroll Event till either the Top parent is reached or Scroll succeeded.
+    while (curBox && !curBox->isRenderView()) {
+
+        didScroll = curBox->scroll(direction, granularity, delta);
+        if (didScroll) {
+            return true;
+        }
+        curBox = curBox->containingBlock();
+    }
+    return false;
+}
+
+/* Handles the scrolling when subframes failed to scroll,
+ * sends a scrollposition changed notification. */
+bool EventHandler::MouseMoveEventToMainFrame(Frame* currentFrame,
+                ScrollDirection scrollDirection, bool scrollHandled) {
+
+#if CURSOR_LOGS
+    LOGE("[%s][%d][%s]\n", __FUNCTION__, __LINE__, __FILE__);
+#endif
+
+    if (!currentFrame) {
+        return false;
+    }
+    /* Handle Scrolling Event here only if Sub Frames failed to handle scroll. */
+    if (!scrollHandled && (currentFrame == m_frame->page()->mainFrame())) {
+
+        IntPoint origin = IntPoint(currentFrame->view()->scrollX(),
+                                currentFrame->view()->scrollY());
+
+        if (scrollDirection == ScrollLeft) {
+#if CURSOR_LOGS
+            LOGE("EventHandler::MouseMoveEventToMainFrame ScrollLeft");
+#endif
+            origin.setX(currentFrame->view()->scrollX() - 20);
+        } else if (scrollDirection == ScrollRight) {
+#if CURSOR_LOGS
+            LOGE("EventHandler::MouseMoveEventToMainFrame ScrollRight");
+#endif
+            origin.setX(currentFrame->view()->scrollX() + 20);
+        } else if (scrollDirection == ScrollUp) {
+#if CURSOR_LOGS
+            LOGE("EventHandler::MouseMoveEventToMainFrame ScrollUp");
+#endif
+            origin.setY(currentFrame->view()->scrollY() - 20);
+        } else if (scrollDirection == ScrollDown) {
+#if CURSOR_LOGS
+            LOGE("EventHandler::MouseMoveEventToMainFrame ScrollDown");
+#endif
+            origin.setY(currentFrame->view()->scrollY() + 20);
+        }
+        currentFrame->view()->notifyScrollPositionChanged(origin);
+        return true;
+    }
+    return false;
+}
+
+/* Returns the scrolling direction for Scrolling Elements. */
+ScrollDirection EventHandler::scrollDirectionForElement(const PlatformMouseEvent& mouseEvent) {
+
+    IntPoint oldpos = lastKnownMousePosition();
+    int x = mouseEvent.position().x();
+    int y = mouseEvent.position().y();
+#if CURSOR_LOGS
+    LOGE("EventHandler::scrollDirectionForElement old x=[%d] old y =[%d] currentx=[%d] currenty=[%d]",
+                 oldpos.x(), oldpos.y(), x, y);
+#endif
+    if (x > oldpos.x()) {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForElement ScrollRight");
+#endif
+        return ScrollRight;
+    } else if (x < oldpos.x()) {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForElement ScrollLeft");
+#endif
+        return ScrollLeft;
+    } else if (y > oldpos.y()) {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForElement ScrollDown");
+#endif
+        return ScrollDown;
+//    } else if (y < oldpos.y()) {
+    } else {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForElement ScrollUp");
+#endif
+        return ScrollUp;
+    }
+}
+
+/* Returns the scrolling direction for Scrolling Frames. */
+ScrollDirection EventHandler::scrollDirectionForFrame(
+                const PlatformMouseEvent& mouseEvent) {
+
+    int x = mouseEvent.position().x();
+    int y = mouseEvent.position().y();
+    if (x <= 1) {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForFrame ScrollLeft");
+#endif
+        return ScrollLeft;
+    } else if (x >= (m_frame->view()->visibleWidth() - 10)) {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForFrame ScrollRight");
+#endif
+        return ScrollRight;
+    } else if (y <= 1) {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForFrame ScrollUp");
+#endif
+        return ScrollUp;
+//    } else if (y >= (m_frame->view()->visibleHeight() - 10)) {
+    } else {
+#if CURSOR_LOGS
+        LOGE("EventHandler::scrollDirectionForFrame ScrollDown");
+#endif
+        return ScrollDown;
+    }
+// else {
+//#if CURSOR_LOGS
+//        LOGE("EventHandler::scrollDirectionForFrame NO Scroll Direction");
+//#endif
+//    }
+}
+
+/* Verify that we are within the visible width of the screen
+ * & we don't interfere with frame Scrolling Mechanism. */
+bool EventHandler::elementNeedScrolling(const PlatformMouseEvent& mouseEvent) {
+#if CURSOR_LOGS
+    LOGE("[%s][%d][%s]\n", __FUNCTION__, __LINE__, __FILE__);
+#endif
+    int x = mouseEvent.position().x();
+    int y = mouseEvent.position().y();
+    if ((x > 1) && (x < (m_frame->view()->visibleWidth() - 10)) && (y > 1)
+                    && (y < (m_frame->view()->visibleHeight() - 10))) {
+        return true;
+    }
+    return false;
+}
+#endif
+
 bool EventHandler::handleMouseMoveOrLeaveEvent(const PlatformMouseEvent& mouseEvent, HitTestResult* hoveredNode, bool onlyUpdateScrollbars)
 {
+#if CURSOR_LOGS
+    LOGE("[%s][%d][%s]\n", __FUNCTION__, __LINE__, __FILE__);
+#endif
     ASSERT(m_frame);
     ASSERT(m_frame->view());
 
@@ -1507,7 +1713,79 @@ bool EventHandler::handleMouseMoveOrLeaveEvent(const PlatformMouseEvent& mouseEv
         return true;
     }
 
+#ifdef SUPPORT_BROWSER_VIRTUAL_CURSOR
+    float m_deltaX = 0;
+    float m_deltaY = 0;
+    float m_wheelTicksX = 0;
+    float m_wheelTicksY = 0;
+    ScrollDirection scrollDirection;
+    bool eventHandled;
+    if (!elementNeedScrolling(mouseEvent)) {
+        scrollDirection = scrollDirectionForFrame(mouseEvent);
+        switch (scrollDirection) {
+            case ScrollLeft:
+#if CURSOR_LOGS
+                LOGE("EventHandler::handleMouseMoveEventScrollLeft");
+#endif
+                m_deltaX = maximumCursorScroll;
+                m_deltaY = minimumCursorScroll;
+                m_wheelTicksX = maximumWheelTickForCursor;
+                m_wheelTicksY = minimumWheelTickForCursor;
+                break;
+            case ScrollRight:
+#if CURSOR_LOGS
+                LOGE("EventHandler::handleMouseMoveEvent ScrollRight");
+#endif
+                m_deltaX = (-maximumCursorScroll);
+                m_deltaY = minimumCursorScroll;
+                m_wheelTicksX = maximumWheelTickForCursor;
+                m_wheelTicksY = minimumWheelTickForCursor;
+                break;
+            case ScrollUp:
+#if CURSOR_LOGS
+                LOGE("EventHandler::handleMouseMoveEvent ScrollUp");
+#endif
+                m_deltaX = minimumCursorScroll;
+                m_deltaY = maximumCursorScroll;
+                m_wheelTicksX = minimumWheelTickForCursor;
+                m_wheelTicksY = maximumWheelTickForCursor;
+                break;
+            case ScrollDown:
+#if CURSOR_LOGS
+                LOGE("EventHandler::handleMouseMoveEvent ScrollDown");
+#endif
+                m_deltaX = minimumCursorScroll;
+                m_deltaY = (-maximumCursorScroll);
+                m_wheelTicksX = minimumWheelTickForCursor;
+                m_wheelTicksY = maximumWheelTickForCursor;
+                break;
+            default:
+                LOGE("EventHandler::handleMouseMoveEvent default");
+                break;
+        }
+        PlatformWheelEvent* wheelevent = new PlatformWheelEvent(
+                        mouseEvent.position(), mouseEvent.globalPosition(), m_deltaX,
+                        m_deltaY, m_wheelTicksX, m_wheelTicksY, ScrollByPixelWheelEvent,
+                        false, false, false, false);
+        eventHandled = handleWheelEvent(*wheelevent);
+        delete wheelevent;
+        /* If the wheel event is not handled pass the event to main frame. */
+        if (!eventHandled) {
+            MouseMoveEventToMainFrame(m_frame->page()->mainFrame(),scrollDirection,eventHandled);
+        }else {
+            return eventHandled;
+        }
+    }
+#endif
+    // FIXME: Both mouseMoved() and handleMouseMoveEvent() are publicly exposed. Fix eternal
+    // callers to use mouseMoved() instead, and remove the need to double-protect FrameView
+    // when handleMouseMoveEvent() is called by mouseMoved().
+    RefPtr<FrameView> protector(m_frame->view());
+
+#ifndef SUPPORT_BROWSER_VIRTUAL_CURSOR
+    /* Do not set last known mouse position here for XP5 device with cursor. */
     setLastKnownMousePosition(mouseEvent);
+#endif
 
     if (m_hoverTimer.isActive())
         m_hoverTimer.stop();
@@ -1575,6 +1853,24 @@ bool EventHandler::handleMouseMoveOrLeaveEvent(const PlatformMouseEvent& mouseEv
     if (m_lastMouseMoveEventSubframe && m_lastMouseMoveEventSubframe->tree().isDescendantOf(m_frame) && m_lastMouseMoveEventSubframe != newSubframe)
         passMouseMoveEventToSubframe(mev, m_lastMouseMoveEventSubframe.get());
 
+#ifdef SUPPORT_BROWSER_VIRTUAL_CURSOR
+    /* Check whether the cursor is within the limits of the screen,
+     * If so get the direction & try to scroll the element under the cursor. */
+    if(elementNeedScrolling(mouseEvent))
+     {
+        /*Fetching the Scroll direction & try to scroll the element under the cursor. */
+        ScrollDirection scrollDirection = scrollDirectionForElement(mouseEvent);
+        if (scrollElementOnMouseMove(scrollDirection, ScrollByLine, mev.targetNode())) {
+#if CURSOR_LOGS
+            LOGE("EventHandler::handleMouseMoveEvent Element under cursor is scrolled");
+#endif
+        }
+     }
+    /* Setting the last known mouse position only after checking whether element under
+     * cursor needs scroll. making sure Last known position & current position are not same. */
+    setLastKnownMousePosition(mouseEvent);
+#endif
+
     if (newSubframe) {
         // Update over/out state before passing the event to the subframe.
         updateMouseEventTargetNode(mev.targetNode(), mouseEvent, true);
@@ -1624,6 +1920,11 @@ static Node* parentForClickEvent(const Node& node)
 
 bool EventHandler::handleMouseReleaseEvent(const PlatformMouseEvent& mouseEvent)
 {
+#if CURSOR_LOGS
+    LOGE("EventHandler::handleMouseReleaseEvent  X = [%d] Y = [%d]",
+    mouseEvent.position().x(), mouseEvent.position().y());
+#endif
+
     RefPtr<FrameView> protector(m_frame->view());
 
     m_frame->selection().setCaretBlinkingSuspended(false);
@@ -2186,8 +2487,12 @@ bool EventHandler::handleWheelEvent(const PlatformWheelEvent& e)
     // Instead, the handlers should know convert vertical scrolls
     // appropriately.
     PlatformWheelEvent event = e;
+/* Do not turn vertical ticks into horizontal ticks for mouse move
+ * mapped to wheel events. */
+#ifndef SUPPORT_BROWSER_VIRTUAL_CURSOR
     if (m_baseEventType == PlatformEvent::NoType && shouldTurnVerticalTicksIntoHorizontal(result, e))
         event = event.copyTurningVerticalTicksIntoHorizontalTicks();
+#endif
 
     if (node) {
         // Figure out which view to send the event to.
